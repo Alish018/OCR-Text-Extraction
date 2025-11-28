@@ -1,23 +1,18 @@
-# OCR_Task — Extract `_1_` token
+This project implements an end-to-end OCR system designed to extract a specific text line containing the pattern _1_ from shipping label / waybill images.
+The goal aligns with the assignment requirement of building a production-ready OCR pipeline capable of achieving ≥75% accuracy on the target field.
 
-Simple beginner-friendly OCR project that extracts the token containing `_1_` from label images.
+The solution includes:
 
-## How to use (step-by-step)
+A full preprocessing pipeline
 
-1. Put all your images into the `images/` folder.
+Combined OCR engines (Tesseract + EasyOCR)
 
-2. Install Tesseract system binary:
-   - Ubuntu: `sudo apt install tesseract-ocr`
-   - Windows: install from UB-Mannheim or Tesseract project and ensure it's in PATH.
+Text detection (Contours / EAST)
 
-3. Create Python env and install packages:
+A robust text-extraction logic specially optimized for _1_ pattern
 
+A Streamlit web interface for demonstration
 
-4. Run the Streamlit demo:
-5. To evaluate against ground truth:
-- Edit `tests/ground_truth.csv` with rows: `filename,expected`
-- Run:
-  ```
-  python scripts/evaluate.py --images_folder images --gt tests/ground_truth.csv
-  ```
-- Results saved at `results/eval_results.csv`.
+Evaluation script & accuracy reporting
+
+This repository shows my complete approach, code structure, and accuracy evaluation methodology.
