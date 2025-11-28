@@ -1,10 +1,3 @@
-# scripts/evaluate.py
-"""
-Evaluate extraction on a folder of images with a ground-truth CSV.
-Usage:
-  python scripts/evaluate.py --images_folder images --gt tests/ground_truth.csv
-"""
-
 import argparse
 import pandas as pd
 import os
@@ -47,3 +40,4 @@ if __name__ == "__main__":
     parser.add_argument("--gt", default="tests/ground_truth.csv", help="Ground truth CSV")
     args = parser.parse_args()
     evaluate(args.images_folder, args.gt)
+
