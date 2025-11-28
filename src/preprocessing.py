@@ -1,18 +1,8 @@
-# src/preprocessing.py
-"""
-Simple, robust preprocessing helpers for images before OCR.
-Designed for beginners: clear functions + safe defaults.
-"""
-
 import cv2
 import numpy as np
 from pathlib import Path
 
 def load_image(path):
-    """
-    Load an image from disk. Returns BGR OpenCV image.
-    Raises FileNotFoundError if path missing.
-    """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Image not found: {path}")
@@ -22,11 +12,9 @@ def load_image(path):
     return img
 
 def to_gray(img):
-    """Convert BGR to grayscale."""
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 def resize_keep_aspect(img, max_side=1600):
-    """Resize image so the longest side is at most max_side (preserve aspect)."""
     h, w = img.shape[:2]
     scale = 1.0
     if max(h, w) > max_side:
@@ -35,31 +23,21 @@ def resize_keep_aspect(img, max_side=1600):
     return img
 
 def apply_clahe(gray, clip_limit=3.0, tile_grid=(8,8)):
-    """Improve contrast using CLAHE."""
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid)
     return clahe.apply(gray)
 
 def denoise_nlmeans(gray, h=10):
-    """Denoise using Non-local Means (keeps edges)."""
     return cv2.fastNlMeansDenoising(gray, None, h, 7, 21)
 
 def adaptive_thresh(gray, block_size=15, c=10):
-    """Adaptive thresholding (handles uneven light)."""
-    # Ensure block_size odd and > 3
     if block_size % 2 == 0:
         block_size += 1
     return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                  cv2.THRESH_BINARY, block_size, c)
 
 def deskew(gray):
-    """
-    Attempt to deskew using minAreaRect of dark pixels.
-    Returns rotated_gray, angle_degrees
-    """
-    # Find coordinates of non-white pixels
     coords = np.column_stack(np.where(gray < 250))
     if coords.shape[0] < 10:
-        # not enough info to compute angle
         return gray, 0.0
     rect = cv2.minAreaRect(coords)
     angle = rect[-1]
@@ -74,14 +52,6 @@ def deskew(gray):
     return rotated, angle
 
 def preprocess_for_ocr(image_path):
-    """
-    Full preprocessing pipeline returning a dict:
-    {
-        'original': BGR image,
-        'gray': grayscale image after CLAHE & denoise & deskew,
-        'binarized': binary image for contour detection
-    }
-    """
     img = load_image(image_path)
     img = resize_keep_aspect(img)
     gray = to_gray(img)
@@ -95,3 +65,4 @@ def preprocess_for_ocr(image_path):
         "binarized": bin_img,
         "deskew_angle": angle
     }
+
