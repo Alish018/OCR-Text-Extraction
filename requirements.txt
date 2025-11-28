@@ -1,0 +1,10 @@
+opencv-python
+numpy
+pillow
+pytesseract
+easyocr
+rapidfuzz
+pandas
+streamlit
+pytest
+python-dotenv
