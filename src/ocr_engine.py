@@ -1,22 +1,12 @@
-# src/ocr_engine.py
-"""
-Thin wrappers around two open-source OCR backends:
-- pytesseract (Tesseract)
-- easyocr (Neural)
-Each wrapper returns (text, confidence_estimate)
-"""
-
 import pytesseract
 import easyocr
 import numpy as np
 import cv2
 
-# Lazy-loading easyocr reader so imports are fast
 _reader = None
 def get_easyocr_reader(langs=["en"]):
     global _reader
     if _reader is None:
-        # gpu=False by default (safer for beginners)
         _reader = easyocr.Reader(langs, gpu=False)
     return _reader
 
@@ -34,13 +24,8 @@ def ocr_tesseract(image, psm=6, whitelist="0123456789abcdefghijklmnopqrstuvwxyzA
     except Exception:
         return "", 20.0
 
-
 def ocr_easyocr(image):
-    """
-    Run EasyOCR on an image (grayscale or BGR).
-    Returns (combined_text, avg_confidence_0_100)
-    """
-    # ensure RGB for easyocr
+        
     if len(image.shape) == 2:
         img_in = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     else:
@@ -60,3 +45,4 @@ def ocr_easyocr(image):
     combined = " ".join(texts)
     avg_conf = float(np.mean(confs)) * 100.0  # scale to 0-100 like pytesseract
     return (combined.strip(), avg_conf)
+
