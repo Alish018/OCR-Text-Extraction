@@ -1,17 +1,3 @@
-# src/text_extraction.py
-"""
-Improved extraction logic for the assignment token containing `_1_`.
-
-Features:
-- Strong regex detection
-- Multi-engine candidate merging (Tesseract + EasyOCR)
-- Crop-based OCR for local text areas
-- Robust text cleanup and confusion repair (O→0, l/I→1, -→_)
-- Strong scoring logic with confidence + digit fraction + engine votes
-- Final strict cleanup that removes all unwanted characters
-- Defensive coding to avoid crashes
-"""
-
 import re
 import os
 import cv2
@@ -19,16 +5,10 @@ from pathlib import Path
 
 from src import preprocessing, ocr_engine
 
-# Strict pattern: <alnum>{3,} _1_ <alnum>{2,}
 PATTERN_UNDERSCORE = re.compile(r'\b[0-9A-Za-z]{3,}_1_[0-9A-Za-z]{2,}\b')
 
-# More permissive fallback: long alphanumeric-ish tokens
 PATTERN_FALLBACK = re.compile(r'\b[0-9A-Za-z_]{6,}\b')
 
-
-# -------------------------
-# BASIC UTILITIES
-# -------------------------
 def _clean_text(s):
     """Convert OCR text to single-line, trimmed text."""
     if s is None:
@@ -40,13 +20,6 @@ def _clean_text(s):
 
 
 def _repair_common_confusions(tok):
-    """
-    Fix common OCR mistakes:
-    - O/o → 0
-    - l/I → 1
-    - - → _
-    - remove spaces, replace pipes
-    """
     if not tok:
         return tok
 
@@ -63,10 +36,6 @@ def _repair_common_confusions(tok):
 
 
 def _final_clean_token(tok):
-    """
-    Keep A-Z, a-z, 0-9, underscore only.
-    If `_1_` missing but '1' exists and token is long, try to insert `_1_` around a central '1'.
-    """
     if not tok:
         return ""
 
@@ -74,11 +43,9 @@ def _final_clean_token(tok):
     if not clean:
         return ""
 
-    # If already clean and good
     if '_1_' in clean:
         return clean
 
-    # Attempt last-resort correction
     if '1' in clean and len(clean) >= 6:
         idxs = [i for i, c in enumerate(clean) if c == '1']
         if idxs:
@@ -89,12 +56,7 @@ def _final_clean_token(tok):
 
     return clean
 
-
-# -------------------------
-# SCORING FUNCTION
-# -------------------------
 def _token_score(token, conf=30.0, source_votes=0):
-    """Score candidates using confidence, length, digit fraction, pattern presence."""
     t = token or ""
     if not t:
         return -9999
@@ -107,38 +69,21 @@ def _token_score(token, conf=30.0, source_votes=0):
     score += digit_frac * 30.0
 
     if '_1_' in t:
-        score += 200.0
-
+        score += 200.0        
     score += source_votes * 80.0
-
     return score
-
-
-# -------------------------
-# MERGING OCR RESULTS
-# -------------------------
 def _merge_ocr_results(tess_text, tess_conf, easy_text, easy_conf):
-    """
-    Merge tokens from both OCR engines.
-    Returns: list of dicts {text, conf, votes}
-    """
     candidates = {}
-
     def add_candidate(text, conf, engine_name):
         if text is None:
             return
-
         t = _clean_text(text)
         if not t:
             return
-
-        # safe confidence
         try:
             conf_val = float(conf)
         except Exception:
             conf_val = 30.0
-
-        # Split into tokens + include whole
         parts = [p.strip() for p in re.split(r'\s+', t) if len(p.strip()) >= 3]
         parts.insert(0, t.strip())
 
@@ -157,8 +102,6 @@ def _merge_ocr_results(tess_text, tess_conf, easy_text, easy_conf):
 
     add_candidate(tess_text, tess_conf, "tesseract")
     add_candidate(easy_text, easy_conf, "easyocr")
-
-    # Normalize
     out = []
     for k, v in candidates.items():
         avg_conf = sum(v["confs"]) / max(1, len(v["confs"]))
@@ -166,24 +109,14 @@ def _merge_ocr_results(tess_text, tess_conf, easy_text, easy_conf):
         out.append({"text": k, "conf": avg_conf, "votes": votes})
 
     return out
-
-
-# -------------------------
-# MAIN EXTRACTION
-# -------------------------
 def extract_target_line_from_image(image_path):
     p = Path(image_path)
     if not p.exists():
         return "", {"method": "file_missing", "confidence": 0}
 
-    # Preprocessing
     prep = preprocessing.preprocess_for_ocr(str(p))
     gray = prep.get("gray")
     bin_img = prep.get("binarized")
-
-    # -------------------------
-    # Full-image OCR
-    # -------------------------
     try:
         tess_text, tess_conf = ocr_engine.ocr_tesseract(gray, psm=6)
     except Exception:
@@ -196,8 +129,7 @@ def extract_target_line_from_image(image_path):
 
     tess_text = _clean_text(tess_text)
     easy_text = _clean_text(easy_text)
-
-    # Direct strict pattern match
+    
     for raw, conf in [(tess_text, tess_conf), (easy_text, easy_conf)]:
         m = PATTERN_UNDERSCORE.search(raw)
         if m:
@@ -205,41 +137,26 @@ def extract_target_line_from_image(image_path):
             tok = _final_clean_token(_repair_common_confusions(tok))
             return tok, {"method": "pattern_fulltext_direct", "confidence": float(conf)}
 
-    # Build candidates from full-image OCR
     candidates = _merge_ocr_results(tess_text, tess_conf, easy_text, easy_conf)
 
-    # Strict candidates from merged full-text OCR
     strict = [c for c in candidates if PATTERN_UNDERSCORE.search(c["text"])]
     if strict:
         best = max(strict, key=lambda c: _token_score(c["text"], c["conf"], c["votes"]))
         cleaned = _final_clean_token(best["text"])
         return cleaned, {"method": "pattern_fulltext_candidate", "confidence": best["conf"]}
-
-    # -------------------------
-    # CROP-BASED OCR
-    # -------------------------
-        # -------------------------
-    # TEXT DETECTION (EAST) + CROP-BASED OCR
-    # -------------------------
     crop_candidates = []
-
-    # path to EAST model (change if you stored somewhere else)
     east_model = os.path.join(os.getcwd(), "models", "frozen_east_text_detection.pb")
     if os.path.exists(east_model):
         try:
-            # use color image for detector
-            orig_img = prep.get("original")
-            # if original is BGR, fine; convert to RGB if needed for display only
+            orig_img = prep.get("original") 
             boxes = text_detector.detect_text_east(orig_img, east_model, score_threshold=0.5, nms_threshold=0.4, width=640, height=640)
         except Exception:
             boxes = []
     else:
         boxes = []
-
-    # If EAST found boxes, use them (prefer these). Otherwise fall back to contour method.
     if boxes:
         for (x, y, w, h) in boxes:
-            # small sanity padding
+           
             pad = 6
             x0 = max(0, x - pad)
             y0 = max(0, y - pad)
@@ -250,7 +167,7 @@ def extract_target_line_from_image(image_path):
                 continue
             if crop.shape[1] < 200:
                 crop = cv2.resize(crop, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            # OCR both engines for the crop
+            
             try:
                 t_t, c_t = ocr_engine.ocr_tesseract(crop, psm=7)
             except Exception:
@@ -261,14 +178,12 @@ def extract_target_line_from_image(image_path):
                 t_e, c_e = "", 20.0
             merged = _merge_ocr_results(t_t, c_t, t_e, c_e)
             crop_candidates.extend(merged)
-            # immediate strict match return
+            
             for m in merged:
                 if PATTERN_UNDERSCORE.search(m["text"]):
                     cleaned = _final_clean_token(_repair_common_confusions(m["text"]))
                     return cleaned, {"method": "pattern_in_east_crop_direct", "confidence": m["conf"]}
     else:
-        # fallback: original contour-based approach (keep your old code here)
-        # we will reuse the existing contour-based logic if needed
         if bin_img is not None and gray is not None:
             contours, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             contours = sorted(contours, key=cv2.contourArea, reverse=True)[:80]
@@ -302,9 +217,6 @@ def extract_target_line_from_image(image_path):
                         cleaned = _final_clean_token(_repair_common_confusions(m["text"]))
                         return cleaned, {"method": "pattern_in_contour_crop_direct", "confidence": m["conf"]}
 
-    # -------------------------
-    # MERGE ALL CANDIDATES
-    # -------------------------
     combined = {}
     for c in candidates:
         combined[c["text"]] = {"text": c["text"], "conf": c["conf"], "votes": c["votes"]}
@@ -321,9 +233,6 @@ def extract_target_line_from_image(image_path):
     if not all_candidates:
         return "", {"method": "no_candidates", "confidence": 0}
 
-    # -------------------------
-    # FINAL SCORING
-    # -------------------------
     scored = []
     for c in all_candidates:
         cleaned = _final_clean_token(_repair_common_confusions(c["text"]))
@@ -336,25 +245,18 @@ def extract_target_line_from_image(image_path):
 
     best_txt, best_score, best_conf, best_votes = max(scored, key=lambda x: x[1])
 
-    # If no `_1_` but token still contains '1', try fallback
     if '_1_' not in best_txt:
         fallback = [s for s in scored if '1' in s[0] and len(s[0]) >= 6]
         if fallback:
             best_txt = max(fallback, key=lambda x: x[1])[0]
-        # --- New: Trim to nearest reasonable token around '_1_' ---
-        # --- Trim around '_1_' to avoid long garbage strings ---
     def _trim_around_1(token, max_len=50):
         if not token or '_1_' not in token:
             return token
         i = token.find('_1_')
-
-        # expand left
         left = i - 1
         while left >= 0 and (token[left].isalnum() or token[left] == '_') and (i - left) <= max_len:
             left -= 1
         left += 1
-
-        # expand right
         right = i + 3
         while right < len(token) and (token[right].isalnum() or token[right] == '_') and (right - i) <= max_len:
             right += 1
@@ -363,12 +265,7 @@ def extract_target_line_from_image(image_path):
         return trimmed if len(trimmed) >= 6 else token
 
     best_txt = _trim_around_1(best_txt)
-
-
     best_txt = _trim_around_1(best_txt, max_len=40)
-    # --- End trimming ---
-        
-
     best_txt = _final_clean_token(best_txt)
 
     if '_1_' not in best_txt and len(best_txt) < 6:
@@ -379,3 +276,4 @@ def extract_target_line_from_image(image_path):
         "confidence": float(best_conf),
         "votes": int(best_votes)
     }
+
